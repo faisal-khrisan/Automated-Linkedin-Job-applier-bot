@@ -1,104 +1,86 @@
-from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.common.by import By
-import time
+import requests
+from datetime import datetime, timedelta
+from twilio.rest import Client
 
-ACCOUNT_EMAIL = YOUR LOGIN EMAIL
-ACCOUNT_PASSWORD = YOUR LOGIN PASSWORD
-PHONE = YOUR PHONE NUMBER
+# Twilio credentials
+def send_message (index : int, icon : str, percentage_change, news_content):
+    account_sid = 'your id '
+    auth_token = 'your api'
+    client = Client(account_sid, auth_token)
 
-
-def abort_application():
-    # Click Close Button
-    close_button = driver.find_element(by=By.CLASS_NAME, value="artdeco-modal__dismiss")
-    close_button.click()
-
-    time.sleep(2)
-    # Click Discard Button
-    discard_button = driver.find_elements(by=By.CLASS_NAME, value="artdeco-modal__confirm-dialog-btn")[1]
-    discard_button.click()
+    message = client.messages.create(
+      from_='.',
+      content_sid='.',
+      body=f"TSLA: {icon} {percentage_change:.2f}%\n"
+           f"Headline:{news_content[index][0]["title"]} ?\n"
+           f"Brief:{news_content[index][1]["description"]}",
+      to=''
+    )
 
 
-chrome_driver_path = YOUR CHROME DRIVER PATH
 
-# Optional - Automatically keep your chromedriver up to date.
-from webdriver_manager.chrome import ChromeDriverManager  # pip install webdriver-manager
-chrome_driver_path = ChromeDriverManager(path=YOUR CHROME DRIVER FOLDER).install()
+date = datetime
+current_date = date.now()
+date_before_two_days = str((current_date - timedelta(days=2)).date())
+date_before_three_days = str((current_date - timedelta(days=3)).date())
 
-# Optional - Keep the browser open if the script crashes.
-chrome_options = webdriver.ChromeOptions()
-chrome_options.add_experimental_option("detach", True)
+# Company stock API Key
+STOCK = "TSLA"
+COMPANY_NAME = "Tesla Inc"
+API_KEY = ""
 
-service = ChromeService(executable_path=chrome_driver_path)
-driver = webdriver.Chrome(service=service, options=chrome_options)
+para = {
+    "function" : "TIME_SERIES_DAILY",
+    "symbol" : STOCK,
+    "apikey": API_KEY
+}
 
-driver.get("https://www.linkedin.com/jobs/search/?currentJobId=3586148395&f_LF=f_AL&geoId=101356765&"
-           "keywords=python&location=London%2C%20England%2C%20United%20Kingdom&refresh=true")
+response = requests.get(url="https://www.alphavantage.co/query", params=para)
+response.raise_for_status()
+print(response.text)
 
-# Click Reject Cookies Button
-time.sleep(2)
-reject_button = driver.find_element(by=By.CSS_SELECTOR, value='button[action-type="DENY"]')
-reject_button.click()
 
-# Click Sign in Button
-time.sleep(2)
-sign_in_button = driver.find_element(by=By.LINK_TEXT, value="Sign in")
-sign_in_button.click()
+# close price for today and yesterday
+data = response.json()["Time Series (Daily)"]
 
-# Sign in
-time.sleep(5)
-email_field = driver.find_element(by=By.ID, value="username")
-email_field.send_keys(ACCOUNT_EMAIL)
-password_field = driver.find_element(by=By.ID, value="password")
-password_field.send_keys(ACCOUNT_PASSWORD)
-password_field.send_keys(Keys.ENTER)
+close_price_today = data[date_before_two_days]["4. close"]
+close_price_yesterday = data[date_before_three_days]["4. close"]
 
-# CAPTCHA - Solve Puzzle Manually
-input("Press Enter when you have solved the Captcha")
 
-# Get Listings
-time.sleep(5)
-all_listings = driver.find_elements(by=By.CSS_SELECTOR, value=".job-card-container--clickable")
+# company news API key
+api_key = ""
+parameter = {
+    "q" : STOCK,
+    "qInTitle" : COMPANY_NAME,
+    "from" : date_before_three_days,
+    "sortBy": "publishedAt",
+    "apiKey" : api_key,
+}
 
-# Apply for Jobs
-for listing in all_listings:
-    print("Opening Listing")
-    listing.click()
-    time.sleep(2)
-    try:
-        # Click Apply Button
-        apply_button = driver.find_element(by=By.CSS_SELECTOR, value=".jobs-s-apply button")
-        apply_button.click()
 
-        # Insert Phone Number
-        # Find an <input> element where the id contains phoneNumber
-        time.sleep(5)
-        phone = driver.find_element(by=By.CSS_SELECTOR, value="input[id*=phoneNumber]")
-        if phone.text == "":
-            phone.send_keys(PHONE)
+reply = requests.get(url="https://newsapi.org/v2/everything", params= parameter)
+reply.raise_for_status()
 
-        # Check the Submit Button
-        submit_button = driver.find_element(by=By.CSS_SELECTOR, value="footer button")
-        if submit_button.get_attribute("data-control-name") == "continue_unify":
-            abort_application()
-            print("Complex application, skipped.")
-            continue
-        else:
-            # Click Submit Button
-            print("Submitting job application")
-            submit_button.click()
 
-        time.sleep(2)
-        # Click Close Button
-        close_button = driver.find_element(by=By.CLASS_NAME, value="artdeco-modal__dismiss")
-        close_button.click()
+# getting the recent articles news from starting from yesterday till today
+news = reply.json()["articles"]
 
-    except NoSuchElementException:
-        abort_application()
-        print("No application button, skipped.")
-        continue
+# create a list that has the title and description for the last recent 3 news articles
+news_content = [({ "title" : news[item]["title"]}, {"description" : news[item]["description"] }) for item in range (0,3)]
 
-time.sleep(5)
-driver.quit()
+
+# Calculating the differences between the two close prices
+difference = float(close_price_today) - float(close_price_yesterday)
+
+percentage_change = (difference / float (close_price_yesterday)) * 100
+print(difference, percentage_change)
+
+if percentage_change >  2 :
+    send_message(0,"🔺", news_content=news_content, percentage_change=percentage_change)
+elif percentage_change < 2 :
+    abs(percentage_change)
+    send_message(2,"🔻",news_content=news_content, percentage_change=percentage_change)
+else :
+     send_message(1,"🔻🔺",news_content=news_content, percentage_change=percentage_change)
+
+
